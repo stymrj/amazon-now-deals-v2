@@ -1,0 +1,151 @@
+import html
+import json
+import time
+import requests
+from . import config
+
+class TelegramNotifier:
+    def __init__(self, bot_token=None, chat_id=None):
+        self.bot_token = (bot_token or config.TELEGRAM_BOT_TOKEN).strip()
+        self.chat_id = (chat_id or config.TELEGRAM_CHAT_ID).strip()
+        self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
+        self.session = requests.Session()
+
+    @property
+    def is_configured(self):
+        return bool(self.bot_token and self.chat_id)
+
+    def format_deal_block(self, deal):
+        """
+        Formats a single deal block according to user spec:
+        Title
+        Category
+        🔥 <Discount>% OFF || ₹<Price> (MRP: ₹<MRP>) || Click here
+        """
+        title = html.escape((deal.get("title") or "Product").strip())
+        category = html.escape((deal.get("category") or "").strip())
+        fsp = deal.get("fsp", 0)
+        mrp = deal.get("mrp", fsp)
+        disc = deal.get("discount", 0)
+        link = deal.get("url") or deal.get("link") or "https://www.amazon.in"
+        link_escaped = html.escape(link, quote=True)
+
+        price_part = f"₹{fsp}"
+        if mrp and mrp > fsp:
+            price_part += f" (MRP: <strike>₹{mrp}</strike>)"
+
+        lines = [
+            f"<b>{title}</b>",
+            f"<i>{category}</i>" if category else "",
+            f"🔥 <b>{disc}% OFF</b> || <b>{price_part}</b> || <a href=\"{link_escaped}\">Click here</a>"
+        ]
+        return "\n".join([line for line in lines if line])
+
+    def format_deal_message(self, deal):
+        """Formats a single deal as a standalone message (backward compatibility)."""
+        return self.format_deal_block(deal)
+
+    def send_deal(self, deal):
+        """Sends a single deal alert to Telegram (backward compatibility)."""
+        if not self.is_configured:
+            print("  [Telegram] Not configured (missing bot token or chat ID). Skipping alert.")
+            return False
+
+        message = self.format_deal_block(deal)
+        success = self._send_text(message)
+        time.sleep(1.0)
+        return success
+
+    def send_deals_batch(self, deals):
+        """
+        Batches multiple deals into compact digest messages up to Telegram's 4096 char limit.
+        Returns a list of ASINs that were successfully sent.
+        """
+        if not self.is_configured:
+            print("  [Telegram] Not configured (missing bot token or chat ID). Skipping alerts.")
+            return []
+
+        if not deals:
+            return []
+
+        max_items_per_msg = getattr(config, "MAX_ITEMS_PER_MESSAGE", 10)
+        max_chars_per_msg = 3600  # Safe headroom below 4096
+
+        batches = []
+        current_batch = []
+        current_len = 0
+
+        # Pre-format each deal block to avoid duplicate format calls
+        for deal in deals:
+            block = self.format_deal_block(deal)
+            block_len = len(block) + 2  # Double newline separator
+            if current_batch and (current_len + block_len > max_chars_per_msg or len(current_batch) >= max_items_per_msg):
+                batches.append(current_batch)
+                current_batch = [(deal, block)]
+                current_len = block_len
+            else:
+                current_batch.append((deal, block))
+                current_len += block_len
+
+        if current_batch:
+            batches.append(current_batch)
+
+        total_batches = len(batches)
+        print(f"  [Telegram] Grouped {len(deals)} deals into {total_batches} batched message(s)...")
+
+        successful_asins = []
+
+        for b_idx, batch in enumerate(batches, start=1):
+            blocks = [b_text for (_, b_text) in batch]
+            message_text = "\n\n".join(blocks)
+
+            print(f"  [Telegram] Sending batch {b_idx}/{total_batches} ({len(batch)} items, {len(message_text)} chars)...")
+            success = self._send_text(message_text)
+            if success:
+                for (d, _) in batch:
+                    asin = d.get("asin")
+                    if asin:
+                        successful_asins.append(asin)
+            else:
+                print(f"  ❌ Failed to send Telegram batch {b_idx}/{total_batches}")
+
+            if b_idx < total_batches:
+                time.sleep(1.5)
+
+        return successful_asins
+
+    def _send_text(self, text, max_retries=2):
+        url = f"{self.base_url}/sendMessage"
+        payload = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        }
+        for attempt in range(max_retries + 1):
+            try:
+                resp = self.session.post(url, json=payload, timeout=15)
+                if resp.status_code == 429:
+                    retry_after = 5
+                    try:
+                        data = resp.json()
+                        retry_after = int(data.get("parameters", {}).get("retry_after", 5))
+                    except Exception:
+                        pass
+                    print(f"  [⏳ Telegram 429 Rate Limit] Backing off {retry_after + 1}s (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(retry_after + 1)
+                    continue
+
+                if resp.status_code == 200:
+                    res_data = resp.json()
+                    return res_data.get("ok", False)
+                else:
+                    print(f"  [Telegram Error] HTTP {resp.status_code}: {resp.text[:120]}")
+                    return False
+            except Exception as e:
+                print(f"  [Telegram Error] {e}")
+                if attempt < max_retries:
+                    time.sleep(2.0)
+                else:
+                    return False
+        return False
