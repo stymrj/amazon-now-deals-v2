@@ -821,12 +821,12 @@
       'nr.style.display="none";' +
       'g.innerHTML=list.map(function(e){' +
       'var st=esc(e.t);' +
-      'return "<a class=card href=\"https://www.amazon.in/dp/"+esc(e.a)+"\" target=_blank rel=noopener>"' +
+      'return "<a class=card href=\\"https://www.amazon.in/dp/"+esc(e.a)+"\\" target=_blank rel=noopener>"' +
       '+ "<div class=img-wrap>" + (e.d?"<div class=discount-badge><span class=disc-pct>"+e.d+"%</span><span class=disc-off>Off</span></div>":"")' +
-      '+ "<img src=\""+esc(e.img)+"\" loading=lazy onerror=\"this.remove()\"></div>"' +
+      '+ "<img src=\\""+esc(e.img)+"\\" loading=lazy onerror=\\"this.remove()\\"></div>"' +
       '+ "<div class=card-body>"' +
       '+ (e.b?"<div class=brand-name>"+esc(e.b)+"</div>":"")' +
-      '+ "<div class=title title=\""+st+"\">"+st+"</div>"' +
+      '+ "<div class=title title=\\""+st+"\\">"+st+"</div>"' +
       '+ (e.pz?"<div class=pack-size>"+esc(e.pz)+"</div>":"")' +
       '+ "<div class=price-wrap>"+(e.bp!==null?"<span class=price>₹"+e.bp+"</span>":"")+(e.lp&&e.lp!==e.bp?"<span class=mrp>₹"+e.lp+"</span>":"")+"</div></div></a>";' +
       '}).join("");' +
