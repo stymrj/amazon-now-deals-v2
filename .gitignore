@@ -1,0 +1,24 @@
+# Local API response and network dump files
+AZNowCatNav.txt
+AZNowSearch.txt
+Response.txt
+Response2.txt
+SubCat.txt
+requests.txt
+*Tez*.txt
+snacks*.txt
+*dump*.txt
+*Temp.txt
+*.log
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment variables & local bot cache
+.env
+data/
+__pycache__/
+*.py[cod]
